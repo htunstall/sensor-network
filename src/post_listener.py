@@ -90,6 +90,8 @@ class S(BaseHTTPRequestHandler):
             # Calculate the missing fields
             #  - The symmetric difference returns items not in BOTH sets
             #  - The intersection enures we only see missing items from the required_fields set
+            #
+            # This is done as set operations are more efficient compared to double nested for loops
             missing_fields = self.required_fields[self.path[1:]].symmetric_difference(request_json.keys()).intersection(self.required_fields[self.path])
             error_msg = "JSON does not contain all required fields. Missing field(s): {}".format(missing_fields)
             self.wfile.write(error_msg.encode("utf-8"))
@@ -181,11 +183,12 @@ def run(http_port, mongo_data, allowed_paths, server_class=HTTPServer, handler_c
     # -------------------------------------------------------------------------
     logging.info("Connecting to mongoDB...")
     mongoClient     = pymongo.MongoClient(mongo_data["address"], mongo_data["port"])
-    collections     = {"/loftBMEData" : mongoClient.sensors.loft}
-    required_fields = {"/loftBMEData" : {"time", "temperature", "pressure", "humidity", "gas"}}
-    field_datatypes = {"/loftBMEData" : {"time" : str, "temperature" : float, "pressure" : float, "humidity" : float, "gas" : int}}
+    # Take a path in the from "/[collection_name]BMEData" and process it to make the dictionary
+    collections     = {path : mongoClient.sensors[path[1:].split("BMEData")[0]] for path in allowed_paths}
+    required_fields = {path : {"time", "temperature", "pressure", "humidity", "gas"} for path in allowed_paths}
+    field_datatypes = {path : {"time" : str, "temperature" : float, "pressure" : float, "humidity" : float, "gas" : int} for path in allowed_paths}
     logging.info("Done!")
-    
+
     # -------------------------------------------------------------------------
     # Server definition
     # -------------------------------------------------------------------------
@@ -206,8 +209,7 @@ if __name__ == "__main__":
     sys.path.insert(0, os.getcwd())
     from secrets import secrets
     # Add the POST route
-    allowed_paths = []
-    allowed_paths.append(secrets["post_server"]["path"])
+    allowed_paths = secrets["post_paths"]
     http_port     = secrets["post_server"]["port"]
     mongo_data    = secrets["mongo_server"] # contains "port" and "address" keys
     
